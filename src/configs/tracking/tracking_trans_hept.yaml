@@ -1,0 +1,118 @@
+device: cuda:0
+note: decoderhilbert_256bs_fp16nomask
+seed: 42
+log_wandb: true
+num_threads: 5
+log_test_dm_efficiency_plot: false
+log_test_tracking_efficiency_plot: false
+evaluate_gnn_text_model: false
+gnn_text_output_dir: /storage/home/hcoda1/0/sgovil9/r-pli77-0/dec-sectorized/data/part9_out
+gnn_text_plot_label: GNN
+
+# # best finetune:
+# resume: 03_19-22_35_23.9436_trans_hept_42_finetune_decoderhilbert
+
+# resume: 02_24-13_50_31.5891_trans_hept_42_pt05_encoderphi_decoderphi
+resume: 02_26-16_42_56.1576_trans_hept_42_pt05_decoderhilbert
+# resume: 02_26-16_24_03.4295_trans_hept_42_pt05_encoderfixed_decoderphiW
+# # best pretrain
+# resume: 02_11-18_15_47.7771_trans_hept_42_pt05_muon_fp32_cosine
+only_eval: false
+resume_optimizer: true
+resume_lr_scheduler: false  # restart LR schedule on resume (warmup runs again at resumed epoch)
+resume_start_epoch: 0  # set to null to continue from checkpoint epoch + 1
+
+data_setting: all # all, only_good, sample_points, sample_pt_fmin, sample_pt_fmax, sample_phi
+good_pt_thld: 0.0
+epoch_to_sample: 0
+
+model_name: trans_hept
+model_kwargs:
+  gumbel: false
+  encoder_block_size: 256
+  decoder_block_size: 1023
+  n_hashes: 3
+  num_regions: 100  # 150 if tracking-60k
+  pe_type: learned
+  num_heads: 8
+  h_dim: 128
+  n_layers: 4
+  mlp_ratio: 1.0
+  fixed_seq_len: 74040
+  num_w_per_dist: 10
+  use_ckpt: false  # Enable checkpointing to save memory
+  # encoder (4 layers): zorder -> trans_zorder -> hilbert -> trans_hilbert
+  # encoder_serialization_types: ["phi", "phi", "phi", "phi"]
+  encoder_serialization_types: ["random_lsh", "random_lsh", "random_lsh", "random_lsh"]
+  encoder_hilbert_bits: 10
+  # decoder: phi | hilbert
+  decoder_serialization_type: hilbert
+  decoder_hilbert_bits: 10
+  num_queries: 3000
+  reinit_queries: false
+  num_dec_layers: 2
+  decoder_overlap: true
+  deep_supervision: true
+  use_attn_mask: false
+  reinit_regions: false
+  freeze_decoder: false
+  freeze_encoder: false
+  mlp_out_hidden_channels: 256
+  mlp_out_num_layers: 5
+
+postprocessing:
+  # decoder_kmeans: current pipeline
+  # encoder_kmeans: encoder outputs only, with k matched to decoder cluster count
+  # encoder_dbscan: encoder outputs only, DBSCAN(eps=0.5, min_samples=1)
+  # decoder_assignments: current pipeline without the kmeans refinement
+  mode: decoder_kmeans
+  kmeans_iters: 3
+  dbscan_eps: 0.5
+  dbscan_min_samples: 1
+
+loss_name: set
+loss_kwargs:
+  loss_ce: 0.1
+  loss_mask: 200
+  loss_dice: 2
+  eos_coef: 1
+  clf_loss: 1.8
+  clf_pos_weight: 6.0
+  nce_weight: 12.0
+
+
+optimizer_name: muon
+num_epochs: 250
+batch_size: 1
+optimizer_kwargs:
+  lr: 2.5e-4
+  adamw_lr: 2.5e-4
+
+
+# lr_scheduler_name: warmup_hold_cosine
+# lr_scheduler_kwargs:
+#   total_epochs: 250  # keep equal to num_epochs for correct epoch->step mapping
+#   warmup_epochs: 5
+#   hold_until_epoch: 10
+#   decay_end_epoch: 100
+#   decay_min_factor: 0.1
+#   rebound_peak_epoch: 150
+#   rebound_end_epoch: 250
+#   rebound_peak_factor: 0.5
+
+lr_scheduler_name: step
+lr_scheduler_kwargs:
+  gamma: 0.5
+  step_size: 25
+
+data_dir: ../data/
+# dataset_name: tracking-6k
+dataset_name: trackml-large
+
+
+
+amp:
+  enabled: true
+  dtype: bfloat16  # float16 or bfloat16
+
+# eff cross attn

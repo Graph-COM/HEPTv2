@@ -1,0 +1,176 @@
+# HEPTv2 finetune config for low-latency tracking.
+# Mirrors infer.yaml precision and post-processing, while training with
+# randomized decoder split boundaries plus hard/short-track reweighting.
+
+device: cuda:7
+seed: 42
+num_threads: 4
+num_workers: 2
+note: fixm_rs_gpm_heads_lr2e7_l2e6_s2_h1_c4_wd0
+
+data_root: data/tracking
+dataset_name: trackml-large
+
+resume: data/tracking/logs/03_19-22_35_23.9436_trans_hept_42_finetune_decoderhilbert/best_checkpoint.pt
+resume_optimizer: false
+resume_lr_scheduler: false
+resume_start_epoch: 0
+only_eval: false
+num_sub_events: 4
+finetune_l2sp_weight: 1.0e6
+trainable_prefixes:
+  - mask3d_head.instance
+  - mask3d_head.mask_embed
+  - mask3d_head.class_embed
+  - mask3d_head.decoder_norm
+
+model_name: trans_hept
+model_kwargs:
+  encoder_block_size: 1023
+  decoder_block_size: 1023
+  n_hashes: 3
+  num_regions: 100
+  pe_type: learned
+  num_heads: 8
+  h_dim: 128
+  n_layers: 4
+  mlp_ratio: 1.0
+  fixed_seq_len: 74040
+  num_w_per_dist: 10
+  encoder_serialization_types: [random_lsh, random_lsh, random_lsh, random_lsh]
+  encoder_hilbert_bits: 10
+  decoder_serialization_type: hilbert
+  decoder_hilbert_bits: 10
+  num_queries: 3000
+  num_dec_layers: 2
+  decoder_overlap: true
+  deep_supervision: true
+  use_attn_mask: true
+  mlp_out_hidden_channels: 256
+  mlp_out_num_layers: 5
+
+loss_kwargs:
+  loss_ce: 0.1
+  loss_mask: 200
+  loss_dice: 2
+  eos_coef: 1
+  clf_loss: 0.0
+  clf_pos_weight: 6.0
+  nce_weight: 0.0
+  short_track_weight: 2.0
+  short_track_class_weight: 4.0
+  short_track_max_hits: 5
+  short_track_count_source: global
+  hard_example_weight: 1.0
+  hard_example_source: positive_miss
+  hard_example_max_scale: 3.0
+
+optimizer_name: adamw
+optimizer_kwargs:
+  lr: 2.0e-7
+  weight_decay: 0.0
+
+lr_scheduler_name:
+lr_scheduler_kwargs: {}
+
+num_epochs: 8
+batch_size: 1
+
+train_decoder_splitting:
+  random_shift: true
+  random_shift_max_frac: 1.0
+  overlap_shift_jitter_frac: 0.3
+
+train_monitor:
+  compute_metrics: true
+  first_batches: 0
+  every_n_batches: 1
+  abort_min_probes: 8
+  abort_window: 8
+  abort_avg_dm_below: 0.90
+  abort_avg_fake_rate_above: 0.035
+
+amp:
+  enabled: false
+  dtype: bfloat16
+
+eval:
+  eta_abs_max: 4.0
+  compute_metrics: true
+  pt_thld: 0.9
+  predicted_count_thld: 3
+  min_track_length: 0
+  num_sub_events: 4
+
+postprocessing:
+  pre_kmeans_iters: 0
+  pre_kmeans_min_margin: 0.0
+  kmeans_iters: 1
+  kmeans_min_margin: 0.005
+  kmeans_use_fp16_sim: false
+  kmeans_max_refine_cluster_size: 0
+  clf_recall: 1.0
+  decoder_score_threshold: 0.002
+  decoder_active_prob_threshold: 0.0
+  decoder_active_prob_power: 0.75
+  decoder_active_prob_floor: 0.0
+  decoder_use_logit_scores: false
+  stitch_overlap: true
+  stitch_score_gate: 0.010
+  stitch_min_overlap: 1
+  stitch_min_overlap_frac: 0.6
+  stitch_query_topk: 1
+  stitch_union_topk: true
+  pad_size2: false
+  pad_size2_min_sim: 0.3
+  pad_size2_clf_floor: 0.0
+  pad_size2_clf_ceiling: 0.0
+  pad_size2_unique_layer: true
+  pad_size2_topk: 8
+  pad_size2_max_candidates: 0
+  pad_size2_max_clusters: 0
+  pad_size2_max_conflict_size: 0
+  pad_size2_geom_z_max: 0.0
+  pad_size2_geom_phi_max: 0.0
+  merge_similar: true
+  merge_similar_direct: false
+  merge_similar_min_sim: 0.75
+  merge_similar_small_cluster_size: 2
+  merge_similar_max_merged_size: 12
+  merge_similar_topk: 4
+  merge_similar_require_unique_layer: false
+  merge_similar_direct_target_min_size: 0
+  split_overmerged: false
+  split_overmerged_min_size: 6
+  split_overmerged_max_size: 12
+  split_overmerged_min_part_size: 3
+  split_overmerged_min_duplicate_layers: 1
+  split_overmerged_max_part_duplicate_layers: 0
+  split_overmerged_min_improve: 0.04
+  split_overmerged_max_centroid_sim: 0.85
+  split_overmerged_iters: 4
+  split_overmerged_max_clusters: 128
+  residual_regroup: false
+  residual_regroup_clf_threshold: 0.015
+  residual_regroup_max_cluster_size: 3
+  residual_regroup_topk: 32
+  residual_regroup_seed_sim: 0.5
+  residual_regroup_pair_sim: 0.1
+  residual_regroup_min_group_size: 3
+  residual_regroup_max_group_size: 4
+  residual_regroup_require_unique_layer: true
+  residual_regroup_clear_pool: true
+  residual_regroup_pair_repair: false
+  residual_regroup_pair_repair_sim: 0.3
+  residual_regroup_pair_repair_topk: 16
+  residual_regroup_max_hits: 0
+  dedup_same_layer: false
+  dedup_same_layer_min_cluster_size: 4
+  dedup_same_layer_min_size_after: 3
+  dedup_same_layer_min_sim_gap: 0.0
+
+selection:
+  fake_rate_limit: 0.008
+  fake_rate_penalty: 4.0
+best_metric_key: dm_fake_score
+best_metric_mode: max

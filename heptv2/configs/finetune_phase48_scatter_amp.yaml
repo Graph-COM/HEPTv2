@@ -1,0 +1,67 @@
+device: cuda:4
+seed: 42
+num_threads: 4
+num_workers: 0
+note: phase48_scatter_amp_repro
+
+data_root: data/tracking
+dataset_name: trackml-large
+split: test
+checkpoint_path: data/tracking/logs/05_06-13_22_00.5861_trans_hept_42_relaxed9875_from_target_b100_dec_lr3e10_filter/best_checkpoint.pt
+
+amp:
+  enabled: true
+  dtype: float16
+
+inference_path:
+  compact_assignment: true
+  dynamic_pad: true
+  match_fixed_region_bins: true
+  pad_buckets: [
+    4092, 8184, 12276, 16368, 20460, 24552, 28644, 32736, 36828,
+    40920, 45012, 49104, 53196, 57288, 61380, 65472, 69564, 73656,
+    77748
+  ]
+
+eval:
+  eta_abs_max: 4.0
+  compute_metrics: true
+  pt_thld: 0.9
+  predicted_count_thld: 3
+  min_track_length: 0
+  num_sub_events: 3
+
+model_kwargs:
+  encoder_block_size: 1023
+  decoder_block_size: 1023
+  n_hashes: 3
+  num_regions: 100
+  pe_type: learned
+  num_heads: 8
+  h_dim: 128
+  n_layers: 4
+  mlp_ratio: 1.0
+  fixed_seq_len: 74040
+  num_w_per_dist: 10
+  encoder_serialization_types: [random_lsh, random_lsh, random_lsh, random_lsh]
+  encoder_hilbert_bits: 10
+  decoder_serialization_type: none
+  decoder_hilbert_bits: 10
+  num_queries: 3000
+  num_dec_layers: 2
+  decoder_overlap: false
+  deep_supervision: true
+  use_attn_mask: false
+  mlp_out_hidden_channels: 256
+  mlp_out_num_layers: 5
+
+postprocessing:
+  clf_recall: 1.0
+  decoder_score_threshold: -3.4
+  decoder_active_prob_power: 0.02
+  decoder_score_mode: clamp_logprob
+  decoder_batched_decode: true
+  decoder_compile_batched_decode: true
+  embeddings_already_normalized: true
+  codex_fused_nomask_target: true
+  codex_fused_pad_length: 0

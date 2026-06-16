@@ -1,0 +1,202 @@
+# Minimal inference config for heptv2.
+# Matches the training config that produced
+# `03_07-14_20_07.6687_trans_hept_42_fp16model_newdm`.
+
+device: cuda:7
+seed: 42
+
+# Paths resolve from the repo root (i.e. where you run `python -m heptv2.run_inference`).
+data_root: data/tracking
+dataset_name: trackml-large
+split: test
+num_workers: 0
+num_threads: 1
+
+# Checkpoint produced by the training pipeline (contains `model_state_dict` or a bare state_dict).
+# checkpoint_path: data/tracking/logs/03_07-14_20_07.6687_trans_hept_42_fp16model_newdm/best_checkpoint.pt
+checkpoint_path: data/tracking/logs/04_14-10_50_40.1733_trans_hept_42_decoderhilbert_256bs_fp16nomask/best_checkpoint.pt
+# checkpoint_path: data/tracking/logs/03_19-22_35_23.9436_trans_hept_42_finetune_decoderhilbert/best_checkpoint.pt
+
+
+amp:
+  enabled: true
+  dtype: bfloat16   # float16 or bfloat16
+
+model_kwargs:
+  encoder_block_size: 1023
+  decoder_block_size: 1023
+  n_hashes: 3
+  num_regions: 100
+  pe_type: learned
+  num_heads: 8
+  h_dim: 128
+  n_layers: 4
+  mlp_ratio: 1.0
+  fixed_seq_len: 74040
+  num_w_per_dist: 10
+  encoder_serialization_types: [random_lsh, random_lsh, random_lsh, random_lsh]
+  encoder_hilbert_bits: 10
+  decoder_serialization_type: none
+  decoder_hilbert_bits: 10
+  num_queries: 3000
+  num_dec_layers: 2
+  decoder_overlap: false
+  deep_supervision: true
+  use_attn_mask: false
+  mlp_out_hidden_channels: 256
+  mlp_out_num_layers: 5
+
+postprocessing:
+  pre_kmeans_iters: 0
+  pre_kmeans_min_margin: 0.0
+  kmeans_iters: 0
+  kmeans_min_margin: 0.0
+  kmeans_use_fp16_sim: false
+  kmeans_max_refine_cluster_size: 0
+  kmeans_refine_max_score: 0.0
+  clf_recall: 1.0
+  decoder_score_threshold: -5.4
+  decoder_active_prob_threshold: 0.0
+  decoder_active_prob_power: 0.50
+  decoder_active_prob_floor: 0.0
+  decoder_active_query_topk: 0
+  decoder_use_logit_scores: false
+  decoder_score_mode: clamp_logprob
+  decoder_score_bf16: true
+  decoder_compile_assign: true
+  decoder_compile_batched_decode: true
+  decoder_materialize_output: false
+  decoder_batch_assignments: true
+  decoder_batched_decode: true
+  decoder_output_bf16: true
+  decoder_keep_padded: true
+  decoder_primary_sub_events: 0
+  embedding_output_bf16: false
+  embeddings_already_normalized: true
+  cluster_score_filter: false
+  cluster_score_filter_max_size: 3
+  cluster_score_filter_mean_threshold: 0.0
+  cluster_score_filter_min_threshold: 0.0
+  stitch_overlap: false
+  stitch_score_gate: 0.010
+  stitch_min_overlap: 1
+  stitch_min_overlap_frac: 0.6
+  stitch_query_topk: 1
+  stitch_union_topk: true
+  stitch_topk_score_gate: null
+  stitch_topk_assign: false
+  stitch_topk_assign_score_gate: 0.0
+  stitch_source_matrix: false
+  extra_window_bridge: false
+  extra_window_bridge_max_cluster_size: 2
+  extra_window_bridge_max_merged_size: 6
+  extra_window_bridge_min_score: 0.003
+  extra_window_bridge_min_label_hits: 1
+  extra_window_bridge_max_hits: 0
+  extra_window_bridge_query_topk: 0
+  restore_topk_components: false
+  restore_topk_min_score: 0.01
+  restore_topk_max_conflict_size: 0
+  restore_topk_min_target_size: 3
+  restore_topk_unique_layer: true
+  restore_window_clusters: false
+  restore_window_min_size: 3
+  restore_window_min_new_hits: 3
+  restore_window_min_score: 0.0
+  restore_window_max_conflict_size: 2
+  restore_window_min_new_frac: 0.6
+  bridge_window_clusters: false
+  bridge_window_min_score: 0.005
+  bridge_window_min_candidate_size: 3
+  bridge_window_min_label_overlap: 1
+  bridge_window_max_cluster_size: 3
+  bridge_window_max_merged_size: 8
+  pad_window_size2: false
+  pad_window_min_score: 0.005
+  pad_window_extra_min_score: 0.005
+  pad_window_min_overlap: 2
+  pad_window_unique_layer: true
+  pad_window_max_proposals_per_label: 0
+  split_window_clusters: false
+  split_window_min_score: 0.005
+  split_window_min_cluster_size: 5
+  split_window_max_cluster_size: 12
+  split_window_min_part_size: 3
+  split_window_min_remaining_size: 3
+  split_window_min_inside_frac: 0.6
+  split_window_max_part_frac: 0.7
+  split_window_min_duplicate_layers: 0
+  split_window_max_part_duplicate_layers: -1
+  split_window_require_remainder_candidate: false
+  split_window_min_remainder_candidate_hits: 3
+  split_window_max_splits: 128
+  pad_size2: false
+  pad_size2_after_kmeans: false
+  pad_size2_min_sim: 0.3
+  pad_size2_clf_floor: 0.0
+  pad_size2_clf_ceiling: 0.0
+  pad_size2_unique_layer: true
+  pad_size2_topk: 8
+  pad_size2_max_candidates: 0
+  pad_size2_max_clusters: 0
+  pad_size2_max_conflict_size: 0
+  pad_size2_geom_z_max: 0.0
+  pad_size2_geom_phi_max: 0.0
+  merge_similar: true
+  merge_similar_direct: true
+  merge_similar_label_space: true
+  merge_similar_min_sim: 0.68
+  merge_similar_small_cluster_size: 2
+  merge_similar_max_merged_size: 10
+  merge_similar_topk: 4
+  merge_similar_require_unique_layer: false
+  merge_similar_direct_target_min_size: 1
+  merge_similar_bf16_sim: false
+  split_overmerged: false
+  split_overmerged_min_size: 6
+  split_overmerged_max_size: 12
+  split_overmerged_min_part_size: 3
+  split_overmerged_min_duplicate_layers: 1
+  split_overmerged_max_part_duplicate_layers: 0
+  split_overmerged_min_improve: 0.04
+  split_overmerged_max_centroid_sim: 0.85
+  split_overmerged_iters: 4
+  split_overmerged_max_clusters: 128
+  residual_regroup: false
+  residual_regroup_clf_threshold: 0.015
+  residual_regroup_max_cluster_size: 3
+  residual_regroup_topk: 32
+  residual_regroup_seed_sim: 0.5
+  residual_regroup_pair_sim: 0.1
+  residual_regroup_min_group_size: 3
+  residual_regroup_max_group_size: 4
+  residual_regroup_require_unique_layer: true
+  residual_regroup_clear_pool: true
+  residual_regroup_pair_repair: false
+  residual_regroup_pair_repair_sim: 0.3
+  residual_regroup_pair_repair_topk: 16
+  residual_regroup_max_hits: 0
+  dedup_same_layer: false
+  dedup_same_layer_min_cluster_size: 4
+  dedup_same_layer_min_size_after: 3
+  dedup_same_layer_min_sim_gap: 0.0
+  dedup_same_layer_by_score: false
+  dedup_same_layer_score_min_cluster_size: 4
+  dedup_same_layer_score_min_size_after: 3
+  dedup_same_layer_score_min_gap: 0.0
+  prune_small_clusters: false
+  prune_small_cluster_max_size: 5
+  prune_small_cluster_min_size_after: 3
+  prune_small_cluster_max_drop: 1
+  prune_small_cluster_min_sim_gap: 0.0
+  prune_small_cluster_min_score_gap: 0.0
+  prune_small_cluster_require_duplicate_layer: false
+  prune_small_cluster_duplicate_layer_only: false
+
+eval:
+  pt_thld: 0.9
+  predicted_count_thld: 3
+  min_track_length: 0
+  eta_abs_max: 4.0
+  num_sub_events: 3
+  limit_events: null   # set to an int to run a short smoke test

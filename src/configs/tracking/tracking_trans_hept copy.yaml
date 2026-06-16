@@ -1,0 +1,53 @@
+device: cuda:2
+note: new_mask_weights_and_decoder_2_hdim_24_cosineLR_adamw
+seed: 42
+log_wandb: true
+num_threads: 5
+resume: false
+only_eval: false
+
+
+model_name: trans_hept
+model_kwargs:
+  encoder_block_size: 100
+  decoder_block_size: 100
+  n_hashes: 3
+  num_regions: 150  # 150 if tracking-60k
+  pe_type: none
+  num_heads: 4
+  h_dim: 24
+  n_layers: 4
+  num_w_per_dist: 10
+  use_ckpt: true  # Enable checkpointing to save memory
+  num_queries: 1950
+  num_dec_layers: 2
+  deep_supervision: true
+
+
+loss_name: set
+loss_kwargs:
+  loss_ce: 0.1
+  loss_mask: 5
+  loss_dice: 2
+  eos_coef: 1
+  clf_loss: 1.0
+
+
+optimizer_name: adamw
+num_epochs: 250
+batch_size: 1
+optimizer_kwargs:
+  lr: 1.0e-3  # 1.0e-2 if tracking-60k
+  betas: [0.9, 0.95]
+
+
+lr_scheduler_name: cosine
+lr_scheduler_kwargs:
+  num_warmup_steps: 0
+  num_training_steps: 380000
+  eta_min: 1.0e-6
+
+
+data_dir: ../data/
+# dataset_name: tracking-6k
+dataset_name: trackml-large
