@@ -1,82 +1,173 @@
-<h1 align="center">LSH-Based Efficient Point Transformer (HEPT)</h1>
+<h1 align="center">HEPTv2: End-to-End Efficient Point Transformer for Charged-Particle Reconstruction</h1>
+
 <p align="center">
-    <a href="https://arxiv.org/abs/2402.12535"><img src="https://img.shields.io/badge/-arXiv-grey?logo=gitbook&logoColor=white" alt="Paper"></a>
-    <a href="https://github.com/Graph-COM/HEPT"><img src="https://img.shields.io/badge/-Github-grey?logo=github" alt="Github"></a>
-    <a href="https://arxiv.org/abs/2402.12535"> <img alt="License" src="https://img.shields.io/static/v1?label=Pub&message=ICML%2724&color=blue"></a>
+    <a href="https://github.com/Graph-COM/HEPTv2"><img src="https://img.shields.io/badge/-Github-grey?logo=github" alt="Github"></a>
+    <a href="https://github.com/Graph-COM/HEPT"><img src="https://img.shields.io/badge/HEPT%20(v1)-ICML'24-blue" alt="HEPT v1"></a>
+    <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License: MIT"></a>
 </p>
 
-## TODO
-- [ ] Put more details in the README.
-- [ ] Add support for FlashAttn.
-- [ ] Modify the example code to have the same naming convention as mentioned in the paper.
-- [x] Add support for efficient processing of batched input.
-- [x] Add an example of HEPT with minimal code.
+<p align="center">
+  Siqi Miao<sup>1†</sup>, Shitij Govil<sup>1†</sup>, Jack P. Rodgers<sup>2</sup>, Mia Liu<sup>2</sup>,
+  Javier Duarte<sup>3</sup>, Shih-Chieh Hsu<sup>4</sup>, Yuan-Tang Chou<sup>4*</sup>, Pan Li<sup>1*</sup>
+</p>
 
-## News
-- **2024.04:** HEPT now supports efficient processing of batched input by this [commit](https://github.com/Graph-COM/HEPT/commit/2e408388a16400050c0eb4c4f7390c3c24078dee). This is implemented via integrating batch indices in the computation of AND hash codes, which is more efficient than naive padding, especially for batches with imbalanced point cloud sizes. **Note:**
-  - Only the code in `./example` is updated to support batched input, and the original implementation in `./src` is not updated.
-  - The current implementation for batched input is not yet fully tested. Please feel free to open an issue if you encounter any problems.
+<p align="center">
+  <sup>1</sup>Georgia Institute of Technology &nbsp;·&nbsp;
+  <sup>2</sup>Purdue University &nbsp;·&nbsp;
+  <sup>3</sup>UC San Diego &nbsp;·&nbsp;
+  <sup>4</sup>University of Washington
+  <br><sub><sup>†</sup> Equal contribution &nbsp;·&nbsp; <sup>*</sup> Corresponding authors</sub>
+</p>
 
-- **2024.04:** An example of HEPT with minimal code is added in `./example` by this [commit](https://github.com/Graph-COM/HEPT/commit/350a9863d7757e556177c52a44bac2aaf0c6dde8). It's a good starting point for users who want to use HEPT in their own projects. There are minor differences between the example and the original implementation in `./src/models/attention/hept.py`, but they should not affect the performance of the model.
-
+<p align="center"><img src="./assets/heptv2_overview.png" width="92%"></p>
+<p align="center"><em>Figure 1.</em> Overview of charged-particle tracking and the HEPTv2 pipeline. A collider detector records sparse measurements; a high-pileup event produces a large unordered hit cloud, and reconstruction associates hits into particle trajectories. HEPTv2 couples a locality-aware point encoder with a sectorized track decoder under joint end-to-end supervision.</p>
 
 ## Introduction
-This study introduces a novel transformer model optimized for large-scale point cloud processing in scientific domains such as high-energy physics (HEP) and astrophysics. Addressing the limitations of graph neural networks and standard transformers, our model integrates local inductive bias and achieves near-linear complexity with hardware-friendly regular operations. One contribution of this work is the quantitative analysis of the error-complexity tradeoff of various sparsification techniques for building efficient transformers. Our findings highlight the superiority of using locality-sensitive hashing (LSH), especially OR \& AND-construction LSH, in kernel approximation for large-scale point cloud data with local inductive bias. Based on this finding, we propose LSH-based Efficient Point Transformer (**HEPT**), which combines E2LSH with OR \& AND constructions and is built upon regular computations. HEPT demonstrates remarkable performance in two critical yet time-consuming HEP tasks, significantly outperforming existing GNNs and transformers in accuracy and computational speed, marking a significant advancement in geometric deep learning and large-scale scientific data processing.
 
-<p align="center"><img src="./data/HEPT.png" width=85% height=85%></p>
-<p align="center"><em>Figure 1.</em>Pipline of HEPT.</p>
+Charged-particle tracking is a core reconstruction task in high-energy physics (HEP), in
+which sparse detector hits must be associated into particle trajectories under severe
+combinatorial ambiguity. At the High-Luminosity LHC (HL-LHC), this must be done under much
+higher pile-up while preserving both tracking quality and computational efficiency.
 
-## Datasets
-All the datasets can be downloaded and processed automatically by running the scripts in `./src/datasets`, i.e.,
+Existing graph-based approaches achieve strong performance, but their end-to-end runtime is
+often dominated by costly graph construction and processing. Prior transformer-based
+approaches avoid explicit graph processing, yet still rely on auxiliary stages such as hit
+filtering or clustering and are therefore not optimized end-to-end.
+
+**HEPTv2** is a single-stage, end-to-end efficient point transformer for charged-particle
+tracking. It couples a **locality-aware point encoder** with a **sectorized track decoder**,
+predicting final tracks within an end-to-end trainable pipeline:
+
+- The **encoder** applies locality-sensitive hashing (LSH) directly in detector coordinate
+  space `(η, φ)`, serializing the unordered hit cloud into 1D sequences in which spatially
+  nearby hits stay close. This preserves tracking-relevant geometric neighborhoods while
+  enabling block-wise local attention with cost linear in the number of hits `N`.
+- The **decoder** maintains a fixed bank of `M` learnable track slots and predicts the
+  hit-to-track assignment matrix directly. To tame ambiguity at full-event scale, it
+  partitions the event into `k` broad azimuthal `φ`-sectors and solves `k` smaller
+  assignment problems before merging them into the final event-level reconstruction.
+- Encoder and decoder are trained **jointly under a unified objective**, so the encoder learns
+  trajectory-informed, discriminative per-hit representations and the decoder can directly
+  predict hit-to-track assignments end-to-end.
+
+On the TrackML benchmark, HEPTv2 reaches **98.6% double-majority (DM) tracking efficiency**,
+with about a **0.8% fake rate**, **~15 ms** inference latency and **0.4 GB** peak memory per
+event on a single NVIDIA A100 GPU, both scaling near-linearly to `5 × 10⁵` hits. HEPTv2
+attains the best accuracy–latency trade-off among compared methods, improving DM by more than
+4.5% over the strongest prior transformer baseline and by 1.1–2.2% over highly optimized
+graph-based pipelines, while reducing latency by **7×** and **38–52×** respectively.
+
+## Results on TrackML
+
+| Model           | DM efficiency (ε<sub>pT&gt;0.9</sub>) | Fake rate (f<sub>pT&gt;0.9</sub>) | Latency (ms) | Memory (GB) |
+|-----------------|:------:|:---------:|:------------:|:-----------:|
+| OC-GNN          | 96.4%  | 0.9%      | 571.5        | 5.4         |
+| ACORN-GNN       | 97.5%  | 0.9%      | 783.7        | 16.6        |
+| HEPT + DBSCAN   | 89.6%  | 3.3%      | 105.5        | 7.6         |
+| Two-stage MF    | 94.1%  | 0.7%      | 99           | –           |
+| **HEPTv2**      | **98.6%** | **0.8%** | **15.1**   | **0.4**     |
+
+<sub>Evaluated on the TrackML pixel-detector benchmark under `pT > 0.9 GeV`, `|η| < 4` (Two-stage MF reported under the slightly easier `pT > 1.0 GeV`, `|η| < 4`). All methods measured on a single NVIDIA A100 GPU. See the paper for full kinematic breakdowns, scalability curves, and ablations.</sub>
+
+## Method at a glance
+
+**Locality-aware point encoder.** For each hit, an OR–AND E²LSH ordering value
+`o_i = LSH(η_i, φ_i)` is computed directly in detector space. Sorting by `o_i` yields a 1D
+sequence that probabilistically preserves `(η, φ)` locality; the sequence is partitioned into
+fixed-size blocks and self-attention is restricted within each block, giving a block-diagonal
+attention pattern that is linear in `N`. Independent LSH projections are used across heads so
+each event is effectively viewed through multiple randomized orderings. Defaults: 4 layers,
+8 heads, head dim 128, block size 1024, `m_OR = 3`, `m_AND = 2`.
+
+**Sectorized track decoder.** A fixed bank of `M = 3000` learnable track slots is refined
+against the encoded hits via interleaved cross-attention (slot → hits) and self-attention
+(slot ↔ slot) over `L = 2` decoder layers. The event is split into `k = 3` azimuthal sectors
+(`Δφ = 2π/3`); per sector the decoder predicts a slot-activity vector and a hit-assignment
+matrix, which are merged into the event-level reconstruction. This exploits the approximately
+block-sparse structure of the ground-truth assignment matrix.
+
+**Joint end-to-end objective.** The model is trained with a weighted sum of encoder-side and
+decoder-side losses:
+
+- *Encoder:* InfoNCE contrastive loss over per-hit embeddings + BCE target/background
+  classification.
+- *Decoder:* Hungarian matching of slots to ground-truth tracks, followed by sigmoid focal
+  loss + Dice overlap loss on the matched hit-assignment matrix, plus slot-activity BCE.
+
+Default weights `λ_cls = 0.1`, `λ_assign = 200`, `λ_dice = 2`, `λ_bg = 1.8`, `λ_InfoNCE = 12`;
+250 epochs, batch size 1, Muon optimizer, lr `2.5 × 10⁻⁴` with step decay.
+
+## Code
+
+This repository ships a self-contained, minimal implementation of inference and single-GPU
+training in [`heptv2/`](./heptv2). It loads a trained checkpoint and runs
+`encoder → per-sector decoder → post-processing → tracking metrics`, and supports single-GPU
+training (finetune or from scratch) with the same loss composition described above. See
+[`heptv2/README.md`](./heptv2/README.md) for full details on supported options and layout.
+
 ```
-cd ./src/datasets
-python pileup.py
-python tracking.py -d tracking-6k
-python tracking.py -d tracking-60k
+heptv2/
+├── run_inference.py      # inference CLI
+├── run_train.py          # single-GPU training CLI
+├── model/                # Transformer encoder+decoder, HEPT attention, positional emb
+├── data/                 # TrackML loader + preprocessing (eta filter, padding, sectors)
+├── training/             # train/eval loops, set criterion (Hungarian matcher, dice/focal)
+├── eval/                 # post-processing + tracking metrics (DM, fake/dup rate)
+├── utils/                # block-size math, E2LSH hashing, serialization
+├── configs/              # inference / training YAML configs
+└── scripts/              # sbatch launchers + plotting/benchmark scripts
 ```
 
 ## Installation
 
-#### Environment
-We are using `torch 2.3.1` and `pyg 2.5.3` with `python 3.10.14` and `cuda 12.1`. Use the following command to install the required packages:
-```
+```bash
 conda env create -f environment.yml
-pip install torch_geometric==2.5.3
-pip install torch_scatter==2.1.2 torch_cluster==1.6.3 -f https://data.pyg.org/whl/torch-2.3.0+cu121.html
+conda activate cuda121
 ```
 
-#### Running the code
-To run the code, you can use the following command:
+## Usage
+
+### Inference
+
+```bash
+python -m heptv2.run_inference --config heptv2/configs/infer.yaml
 ```
-python tracking_trainer.py -m hept
+
+Set `eval.limit_events: 3` in the config for a quick smoke test, or submit
+`sbatch heptv2/scripts/infer.sh` for the full run.
+
+### Training (single GPU)
+
+```bash
+python -m heptv2.run_train --config heptv2/configs/train.yaml
 ```
 
-Or
-```
-python pileup_trainer.py -m hept
-```
-Configurations will be loaded from those located in `./configs/` directory.
+Per-epoch validation runs the full post-processing + tracking-metrics path, so
+`dm` / `technical_efficiency` / `fake_rate` / `dup_rate` are logged alongside the losses.
+Checkpoint selection is controlled by `best_metric_key` / `best_metric_mode` (e.g. select by
+`dm` with mode `max`). See [`heptv2/README.md`](./heptv2/README.md) for the smoke test and
+full-finetune launchers.
 
-## FAQ
+## Relation to HEPT (v1)
 
-#### How to tune the hyperparameters of HEPT?
-There are three key hyperparameters in HEPT:
-- `block_size`: block size for attention computation
-- `n_hashes`: the number of hash tables, i.e., OR LSH
-- `num_regions`: # of regions HEPT will randomly divide the input space into (Sec. 4.3 in the paper)
+HEPTv2 builds on the LSH-based serialization idea of [HEPT (ICML 2024)](https://github.com/Graph-COM/HEPT),
+but applies it directly in detector coordinate space rather than in latent space, and replaces
+the post-hoc DBSCAN clustering stage with a directly-trained sectorized track decoder, yielding
+a single end-to-end pipeline.
 
-We suggest first determine `block_size` and `n_hashes` according to the computational budget, but generally `n_hashes` should be greater than 1. `num_regions` should be tuned according to the local inductive bias of the dataset.
+## Citation
 
+If you find this work useful, please cite:
 
-
-
-
-
-## Reference
 ```bibtex
-@article{miao2024hept,
-  title   = {Locality-Sensitive Hashing-Based Efficient Point Transformer with Applications in High-Energy Physics},
-  author  = {Miao, Siqi and Lu, Zhiyuan and Liu, Mia and Duarte, Javier and Li, Pan},
-  journal = {arXiv preprint arXiv:2402.12535},
-  year    = {2024}
+@article{miao2026heptv2,
+  title   = {HEPTv2: End-to-End Efficient Point Transformer for Charged Particle Reconstruction},
+  author  = {Miao, Siqi and Govil, Shitij and Rodgers, Jack P. and Liu, Mia and
+             Duarte, Javier and Hsu, Shih-Chieh and Chou, Yuan-Tang and Li, Pan},
+  year    = {2026}
 }
+```
+
+## License
+
+This project is released under the [MIT License](./LICENSE).

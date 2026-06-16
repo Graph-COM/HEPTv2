@@ -20,6 +20,7 @@ codex_logs/
 *.zip
 /data/
 !HEPT.png
+!assets/heptv2_overview.png
 trackml-large/
 # Distribution / packaging
 .Python
