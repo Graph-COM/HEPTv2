@@ -77,16 +77,32 @@ def prep_qk(query, key, w, coords):
     return q_hat, k_hat
 
 
+REGION_MAJOR_AXES = ("eta", "phi")
+
+
 @torch.no_grad()
-def get_geo_shift(regions_h: List[List[int]], hash_shift, region_indices, num_or_hashes):
+def get_geo_shift(regions_h: List[List[int]], hash_shift, region_indices, num_or_hashes, region_major_axis="eta"):
+    """Offset each hit's LSH value by its (eta, phi) region cell.
+
+    The major axis is the outer sort key, so a block that straddles two rows
+    of the region grid wraps around along the minor axis. With "eta", rows run
+    across phi and wrap from phi=+pi to phi=-pi, which are neighbors. With the
+    legacy "phi", columns run across eta and a block can join hits at opposite
+    ends of the detector in eta.
+    """
     region_indices_eta, region_indices_phi = region_indices
 
-    q_hash_shift_eta = region_indices_eta * hash_shift
-    k_hash_shift_eta = region_indices_eta * hash_shift
-
-    q_hash_shift_phi = region_indices_phi * hash_shift * (torch.ceil(regions_h[0][:, None]) + 1)
-    k_hash_shift_phi = region_indices_phi * hash_shift * (torch.ceil(regions_h[0][:, None]) + 1)
-    res = torch.stack([q_hash_shift_phi + q_hash_shift_eta, k_hash_shift_phi + k_hash_shift_eta], dim=0)
+    if region_major_axis == "eta":
+        shift = region_indices_phi * hash_shift + region_indices_eta * hash_shift * (
+            torch.ceil(regions_h[1][:, None]) + 1
+        )
+    elif region_major_axis == "phi":
+        shift = region_indices_eta * hash_shift + region_indices_phi * hash_shift * (
+            torch.ceil(regions_h[0][:, None]) + 1
+        )
+    else:
+        raise ValueError(f"region_major_axis must be one of {REGION_MAJOR_AXES}, got {region_major_axis!r}")
+    res = torch.stack([shift, shift], dim=0)
     return rearrange(res, "a (c h) n -> a c h n", c=num_or_hashes)
 
 
@@ -103,6 +119,13 @@ class HEPTAttention(nn.Module):
         self.num_w_per_dist = kwargs["num_w_per_dist"]
         self.e2lsh = E2LSH(n_hashes=self.n_hashes, n_heads=self.num_heads, dim=hash_dim)
         self.e2lsh_new = E2LSH(n_hashes=self.n_hashes, n_heads=self.num_heads, dim=2)
+        # Checkpoints trained before the eta-major fix need "phi" to reproduce
+        # their bucketing; see `get_geo_shift`.
+        self.region_major_axis = kwargs.get("region_major_axis", "eta")
+        if self.region_major_axis not in REGION_MAJOR_AXES:
+            raise ValueError(
+                f"region_major_axis must be one of {REGION_MAJOR_AXES}, got {self.region_major_axis!r}"
+            )
         encoder_serialization = kwargs.get("encoder_serialization_type", kwargs.get("serialization_type", "random_lsh"))
         self.encoder_serialization_type = canonicalize_serialization_type(encoder_serialization, stage="encoder")
         self.encoder_hilbert_bits = kwargs.get("encoder_hilbert_bits", kwargs.get("num_bits", 10))
@@ -161,7 +184,9 @@ class HEPTAttention(nn.Module):
             # k_hashed[..., clf_hard.squeeze(1) == 0] = float("inf")
 
             hash_shift = rearrange(hash_shift, "c h d -> (c h) d")
-            q_shifts, k_shifts = get_geo_shift(kwargs["regions_h"], hash_shift, kwargs["region_indices"], self.n_hashes)
+            q_shifts, k_shifts = get_geo_shift(
+                kwargs["regions_h"], hash_shift, kwargs["region_indices"], self.n_hashes, self.region_major_axis
+            )
             q_hashed = q_hashed + q_shifts
             k_hashed = k_hashed + k_shifts
             q_positions = q_hashed.argsort(dim=-1)

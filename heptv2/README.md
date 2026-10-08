@@ -30,6 +30,14 @@ serializations, no `phi` decoder serialization.
 strips `module.` and `_orig_mod.` prefixes, then `load_state_dict(strict=False)`
 and prints missing/unexpected keys.
 
+**LSH region order.** `model_kwargs.region_major_axis` sets which axis of the
+per-hash (η, φ) region grid is the outer sort key before hits are cut into
+blocks. The default, `eta`, sweeps φ within each η row, so a block that spills
+into the next row wraps from φ=+π to φ=−π, which are neighbors. The legacy
+`phi` sweeps η within each φ column, so a spilling block joins hits from
+opposite ends of the detector in η. Checkpoints trained before this option
+existed used `phi`, and the configs here that load them pin it.
+
 ## Layout
 
 ```
