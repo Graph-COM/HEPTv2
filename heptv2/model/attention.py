@@ -126,23 +126,41 @@ def lsh_coords(e2lsh, coords2, num_heads):
     return e2lsh(pos)
 
 
-@torch.no_grad()
-def get_geo_shift(regions_h, hash_shift, region_indices, num_or_hashes):
+REGION_MAJOR_AXES = ("eta", "phi")
+
+
+def region_shift(regions_h, hash_shift, region_indices, region_major_axis="eta"):
+    """Offset each hit's LSH value by its (eta, phi) region cell.
+
+    The major axis is the outer sort key, so a block that straddles two rows
+    of the region grid wraps around along the minor axis. With "eta", rows run
+    across phi and wrap from phi=+pi to phi=-pi, which are neighbors. With the
+    legacy "phi", columns run across eta and a block can join hits at opposite
+    ends of the detector in eta.
+    """
     region_indices_eta, region_indices_phi = region_indices
-    q_hash_shift_eta = region_indices_eta * hash_shift
-    k_hash_shift_eta = region_indices_eta * hash_shift
-    q_hash_shift_phi = region_indices_phi * hash_shift * (torch.ceil(regions_h[0][:, None]) + 1)
-    k_hash_shift_phi = region_indices_phi * hash_shift * (torch.ceil(regions_h[0][:, None]) + 1)
-    res = torch.stack([q_hash_shift_phi + q_hash_shift_eta, k_hash_shift_phi + k_hash_shift_eta], dim=0)
+    if region_major_axis == "eta":
+        return region_indices_phi * hash_shift + region_indices_eta * hash_shift * (
+            torch.ceil(regions_h[1][:, None]) + 1
+        )
+    if region_major_axis == "phi":
+        return region_indices_eta * hash_shift + region_indices_phi * hash_shift * (
+            torch.ceil(regions_h[0][:, None]) + 1
+        )
+    raise ValueError(f"region_major_axis must be one of {REGION_MAJOR_AXES}, got {region_major_axis!r}")
+
+
+@torch.no_grad()
+def get_geo_shift(regions_h, hash_shift, region_indices, num_or_hashes, region_major_axis="eta"):
+    shift = region_shift(regions_h, hash_shift, region_indices, region_major_axis)
+    res = torch.stack([shift, shift], dim=0)
     return rearrange(res, "a (c h) n -> a c h n", c=num_or_hashes)
 
 
 @torch.no_grad()
-def get_geo_shift_single(regions_h, hash_shift, region_indices, num_or_hashes):
-    region_indices_eta, region_indices_phi = region_indices
-    hash_shift_eta = region_indices_eta * hash_shift
-    hash_shift_phi = region_indices_phi * hash_shift * (torch.ceil(regions_h[0][:, None]) + 1)
-    return rearrange(hash_shift_phi + hash_shift_eta, "(c h) n -> c h n", c=num_or_hashes)
+def get_geo_shift_single(regions_h, hash_shift, region_indices, num_or_hashes, region_major_axis="eta"):
+    shift = region_shift(regions_h, hash_shift, region_indices, region_major_axis)
+    return rearrange(shift, "(c h) n -> c h n", c=num_or_hashes)
 
 
 class HEPTAttention(nn.Module):
@@ -160,6 +178,13 @@ class HEPTAttention(nn.Module):
         # 2-D (phi, eta) coordinates. Both buffers are kept to match the checkpoint.
         self.e2lsh = E2LSH(n_hashes=self.n_hashes, n_heads=self.num_heads, dim=hash_dim)
         self.e2lsh_new = E2LSH(n_hashes=self.n_hashes, n_heads=self.num_heads, dim=2)
+        # Checkpoints trained before the eta-major fix need "phi" to reproduce
+        # their bucketing; see `region_shift`.
+        self.region_major_axis = kwargs.get("region_major_axis", "eta")
+        if self.region_major_axis not in REGION_MAJOR_AXES:
+            raise ValueError(
+                f"region_major_axis must be one of {REGION_MAJOR_AXES}, got {self.region_major_axis!r}"
+            )
 
     def forward(self, query, key, value, **kwargs):
         query = query.view(-1, self.num_heads, self.dim_per_head)
@@ -196,7 +221,7 @@ class HEPTAttention(nn.Module):
                 regions_h = kwargs["regions_h"].float()[:, :active_width]
                 region_indices = [idx[:active_width] for idx in kwargs["region_indices"]]
                 shifts = get_geo_shift_single(
-                    regions_h, hash_shift, region_indices, active_hashes
+                    regions_h, hash_shift, region_indices, active_hashes, self.region_major_axis
                 )
                 positions = (hashed + shifts).argsort(dim=-1)
         else:
@@ -212,7 +237,7 @@ class HEPTAttention(nn.Module):
             regions_h = kwargs["regions_h"][:, :active_width]
             region_indices = [idx[:active_width] for idx in kwargs["region_indices"]]
             shifts = get_geo_shift_single(
-                regions_h, hash_shift, region_indices, active_hashes
+                regions_h, hash_shift, region_indices, active_hashes, self.region_major_axis
             )
             hashed = hashed + shifts
             positions = hashed.argsort(dim=-1)

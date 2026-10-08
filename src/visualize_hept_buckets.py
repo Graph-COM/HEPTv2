@@ -25,6 +25,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+from models.attention.hept import get_geo_shift
 from models.model_utils.hash_utils import E2LSH, get_regions, lsh_mapping
 from models.model_utils.serialization_utils import compute_serialization_order
 from utils.config_overrides import load_yaml_config
@@ -53,19 +54,8 @@ def _prepare_event(data, encoder_block_size, num_regions, n_hashes, num_heads, s
     return data, valid_mask, region_indices, regions_h
 
 
-def _geo_shift(regions_h, hash_shift, region_indices, n_hashes):
-    region_indices_eta, region_indices_phi = region_indices
-    q_hash_shift_eta = region_indices_eta * hash_shift
-    q_hash_shift_phi = (
-        region_indices_phi * hash_shift * (torch.ceil(regions_h[0][:, None]) + 1)
-    )
-    shifts = q_hash_shift_eta + q_hash_shift_phi
-    # (c*h, N) -> (c, h, N)
-    return shifts.view(n_hashes, -1, shifts.shape[-1])
-
-
 def _random_lsh_positions(coords, valid_mask, region_indices, regions_h,
-                          n_hashes, num_heads, seed):
+                          n_hashes, num_heads, seed, region_major_axis):
     torch.manual_seed(seed)
     e2lsh = E2LSH(n_hashes=n_hashes, n_heads=num_heads, dim=2)
 
@@ -76,7 +66,9 @@ def _random_lsh_positions(coords, valid_mask, region_indices, regions_h,
     q_hashed[..., invalid] = float("inf")
 
     hash_shift = hash_shift.reshape(n_hashes * num_heads, -1)
-    shifts = _geo_shift(regions_h, hash_shift, region_indices, n_hashes)
+    shifts = get_geo_shift(
+        regions_h, hash_shift, region_indices, n_hashes, region_major_axis
+    )[0]  # q and k shifts are identical
     q_hashed = q_hashed + shifts  # (c, h, N)
 
     # argsort gives the permutation (the order we'd read points in).
@@ -160,6 +152,7 @@ def main():
     num_heads = int(mk["num_heads"])
     num_regions = int(mk["num_regions"])
     hilbert_bits = args.hilbert_bits or int(mk.get("encoder_hilbert_bits", 10))
+    region_major_axis = mk.get("region_major_axis", "eta")
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -172,7 +165,7 @@ def main():
     # --- random_lsh ---
     positions = _random_lsh_positions(
         data.coords, valid_mask, region_indices, regions_h,
-        n_hashes, num_heads, seed=args.seed,
+        n_hashes, num_heads, seed=args.seed, region_major_axis=region_major_axis,
     )
     bucket_ids_lsh = positions[args.hash_idx, args.head_idx] // block_size
 
@@ -188,7 +181,8 @@ def main():
     ) // block_size
 
     panels = [
-        (f"random_lsh (hash={args.hash_idx}, head={args.head_idx}, bs={block_size})",
+        (f"random_lsh (hash={args.hash_idx}, head={args.head_idx}, bs={block_size}, "
+         f"major={region_major_axis})",
          bucket_ids_lsh),
         (f"hilbert (num_bits={hilbert_bits}, bs={block_size})", bucket_ids_hilbert),
         (f"zorder (num_bits={hilbert_bits}, bs={block_size})", bucket_ids_zorder),

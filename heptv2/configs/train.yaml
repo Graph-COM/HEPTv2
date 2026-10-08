@@ -30,6 +30,7 @@ model_kwargs:
   decoder_block_size: 1023
   n_hashes: 3
   num_regions: 100
+  region_major_axis: phi  # legacy LSH region order; required by checkpoints trained before the eta-major fix
   pe_type: learned
   num_heads: 8
   h_dim: 128
